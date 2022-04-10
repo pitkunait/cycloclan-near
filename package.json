@@ -1,0 +1,13 @@
+{
+  "name": "cycloclan-near",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "contract:build": "cd contract && bash scripts/build.sh",
+    "contract:dev-deploy": "cd contract && bash scripts/dev-deploy.sh",
+    "contract:deploy": "cd contract && bash scripts/deploy.sh"
+  },
+  "author": "",
+  "license": "ISC"
+}
