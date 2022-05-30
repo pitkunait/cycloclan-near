@@ -1,4 +1,3 @@
-use linkdrop::LINKDROP_DEPOSIT;
 use near_contract_standards::non_fungible_token::{
     metadata::{NFTContractMetadata, TokenMetadata, NFT_METADATA_SPEC},
     refund_deposit_to_account, NonFungibleToken, Token, TokenId,
@@ -6,20 +5,17 @@ use near_contract_standards::non_fungible_token::{
 use near_sdk::{
     borsh::{self, BorshDeserialize, BorshSerialize},
     collections::{LazyOption, LookupMap},
-    env, ext_contract,
+    env,
     json_types::{Base64VecU8, U128},
     log, near_bindgen, require,
     serde::{Deserialize, Serialize},
-    witgen, AccountId, Balance, BorshStorageKey, Gas, PanicOnDefault, Promise, PromiseOrValue,
-    PublicKey,
+    witgen, AccountId, Balance, BorshStorageKey, PanicOnDefault, Promise, PromiseOrValue,
 };
-use near_units::{parse_gas, parse_near};
 
 /// milliseconds elapsed since the UNIX epoch
 #[witgen]
 type TimestampMs = u64;
 
-pub mod linkdrop;
 mod owner;
 pub mod payout;
 mod raffle;
@@ -30,43 +26,20 @@ mod views;
 use payout::*;
 use raffle::Raffle;
 use types::*;
-use util::{current_time_ms, is_promise_success, log_mint, refund};
+use util::{current_time_ms, log_mint};
 
 #[near_bindgen]
 #[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)]
 pub struct Contract {
     pub(crate) tokens: NonFungibleToken,
     metadata: LazyOption<NFTContractMetadata>,
-    // Vector of available NFTs
     raffle: Raffle,
-    pending_tokens: u32,
-    // Linkdrop fields will be removed once proxy contract is deployed
-    pub accounts: LookupMap<PublicKey, bool>,
-    // Whitelist
     whitelist: LookupMap<AccountId, u32>,
-
     sale: Sale,
 }
 
-const GAS_REQUIRED_FOR_LINKDROP: Gas = Gas(parse_gas!("40 Tgas") as u64);
-const GAS_REQUIRED_TO_CREATE_LINKDROP: Gas = Gas(parse_gas!("20 Tgas") as u64);
-const TECH_BACKUP_OWNER: &str = "willem.near";
+const TECH_BACKUP_OWNER: &str = "vash123.near";
 const MAX_DATE: u64 = 8640000000000000;
-// const GAS_REQUIRED_FOR_LINKDROP_CALL: Gas = Gas(5_000_000_000_000);
-
-#[ext_contract(ext_self)]
-trait Linkdrop {
-    fn send_with_callback(
-        &mut self,
-        public_key: PublicKey,
-        contract_id: AccountId,
-        gas_required: Gas,
-    ) -> Promise;
-
-    fn on_send_with_callback(&mut self) -> Promise;
-
-    fn link_callback(&mut self, account_id: AccountId, mint_for_free: bool) -> Token;
-}
 
 #[derive(BorshSerialize, BorshStorageKey)]
 enum StorageKey {
@@ -76,7 +49,6 @@ enum StorageKey {
     Enumeration,
     Approval,
     Raffle,
-    LinkdropKeys,
     Whitelist,
 }
 
@@ -106,26 +78,22 @@ impl Contract {
             ),
             metadata: LazyOption::new(StorageKey::Metadata, Some(&metadata)),
             raffle: Raffle::new(StorageKey::Raffle, size as u64),
-            pending_tokens: 0,
-            accounts: LookupMap::new(StorageKey::LinkdropKeys),
             whitelist: LookupMap::new(StorageKey::Whitelist),
             sale,
         }
     }
 
     #[payable]
-    pub fn nft_mint(
-        &mut self,
-        _token_id: TokenId,
-        _token_owner_id: AccountId,
-        _token_metadata: TokenMetadata,
-    ) -> Token {
-        self.nft_mint_one()
+    pub fn nft_mint_one(&mut self) -> Token {
+        self.nft_mint_many(1)[0].clone()
     }
 
     #[payable]
-    pub fn nft_mint_one(&mut self) -> Token {
-        self.nft_mint_many(1)[0].clone()
+    pub fn nft_mint_exact(&mut self, index: u64) -> Token {
+        self.assert_owner();
+        let id = self.raffle.draw_at_index(index);
+        let owner_id = &env::signer_account_id();
+        self.internal_mint(id.to_string(), owner_id.clone(), None)
     }
 
     #[payable]
@@ -159,44 +127,11 @@ impl Contract {
 
         if !mint_for_free {
             let storage_used = env::storage_usage() - initial_storage_usage;
-            if let Some(royalties) = &self.sale.initial_royalties {
-                // Keep enough funds to cover storage and split the rest as royalties
-                let storage_cost = env::storage_byte_cost() * storage_used as Balance;
-                let left_over_funds = env::attached_deposit() - storage_cost;
-                royalties.send_funds(left_over_funds, &self.tokens.owner_id);
-            } else {
-                // Keep enough funds to cover storage and send rest to contract owner
-                refund_deposit_to_account(storage_used, self.tokens.owner_id.clone());
-            }
+            refund_deposit_to_account(storage_used, self.tokens.owner_id.clone());
         }
         // Emit mint event log
         log_mint(owner_id, &tokens);
         tokens
-    }
-
-    // Contract private methods
-
-    #[private]
-    #[payable]
-    pub fn on_send_with_callback(&mut self) {
-        if !is_promise_success(None) {
-            self.pending_tokens -= 1;
-            let amount = env::attached_deposit();
-            if amount > 0 {
-                refund(&env::signer_account_id(), amount);
-            }
-        }
-    }
-
-    #[payable]
-    #[private]
-    pub fn link_callback(&mut self, account_id: AccountId, mint_for_free: bool) -> Token {
-        if is_promise_success(None) {
-            self.pending_tokens -= 1;
-            self.nft_mint_many_ungaurded(1, &account_id, mint_for_free)[0].clone()
-        } else {
-            env::panic_str("Promise before Linkdrop callback failed");
-        }
     }
 
     // Private methods
@@ -238,15 +173,6 @@ impl Contract {
         minter.as_str() == self.tokens.owner_id.as_str() || minter.as_str() == TECH_BACKUP_OWNER
     }
 
-    fn full_link_price(&self, minter: &AccountId) -> u128 {
-        LINKDROP_DEPOSIT
-            + if self.is_owner(minter) {
-                parse_near!("0 mN")
-            } else {
-                parse_near!("8 mN")
-            }
-    }
-
     fn draw_and_mint(&mut self, token_owner_id: AccountId, refund: Option<AccountId>) -> Token {
         let id = self.raffle.draw();
         self.internal_mint(id.to_string(), token_owner_id, refund)
@@ -266,7 +192,9 @@ impl Contract {
     fn create_metadata(&mut self, token_id: &str) -> TokenMetadata {
         let media = Some(format!("{}.png", token_id));
         let reference = Some(format!("{}.json", token_id));
-        let title = Some(token_id.to_string());
+        let metadata = self.metadata.get().unwrap();
+        let title = Some(format!("{} #{}", metadata.symbol, token_id.to_string()));
+
         TokenMetadata {
             title, // ex. "Arch Nemesis: Mail Carrier" or "Parcel #5055"
             media, // URL to associated media, preferably to decentralized, content-addressed storage
@@ -331,7 +259,7 @@ impl Contract {
             Status::Presale | Status::Closed => self.sale.presale_price.unwrap_or(self.sale.price),
             Status::Open | Status::SoldOut => self.sale.price,
         }
-        .into()
+            .into()
     }
 }
 

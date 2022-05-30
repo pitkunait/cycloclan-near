@@ -6,11 +6,6 @@ impl Contract {
         self.whitelist.contains_key(account_id)
     }
 
-    pub fn cost_of_linkdrop(&self, minter: &AccountId) -> U128 {
-        (self.full_link_price(minter) + self.total_cost(1, minter).0 + self.token_storage_cost().0)
-            .into()
-    }
-
     pub fn total_cost(&self, num: u32, minter: &AccountId) -> U128 {
         (num as Balance * self.cost_per_token(minter).0).into()
     }
@@ -29,7 +24,7 @@ impl Contract {
     }
 
     pub fn tokens_left(&self) -> u32 {
-        self.raffle.len() as u32 - self.pending_tokens
+        self.raffle.len() as u32
     }
 
     pub fn nft_metadata(&self) -> NFTContractMetadata {

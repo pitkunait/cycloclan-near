@@ -31,6 +31,15 @@ impl Contract {
         metadata.base_uri = Some(uri);
         self.metadata.set(&metadata);
     }
+
+    pub fn update_icon_uri(&mut self, uri: String) {
+        self.assert_owner();
+        let mut metadata = self.metadata.get().unwrap();
+        log!("New icon URI: {}", &uri);
+        metadata.icon = Some(uri);
+        self.metadata.set(&metadata);
+    }
+
     pub fn add_whitelist_accounts(&mut self, accounts: Vec<AccountId>, allowance: Option<u32>) {
         self.assert_owner();
         let allowance = allowance.unwrap_or_else(|| self.sale.allowance.unwrap_or(0));
@@ -45,7 +54,6 @@ impl Contract {
     }
 
     pub fn close_contract(&mut self) {
-        #[cfg(not(feature = "testnet"))]
         self.assert_owner();
         self.sale.presale_start = None;
         self.sale.public_sale_start = None;
@@ -56,7 +64,6 @@ impl Contract {
         public_sale_start: Option<TimestampMs>,
         presale_price: Option<U128>,
     ) {
-        #[cfg(not(feature = "testnet"))]
         self.assert_owner();
         let current_time = current_time_ms();
         self.sale.presale_start = Some(current_time);
@@ -67,7 +74,6 @@ impl Contract {
     }
 
     pub fn start_sale(&mut self, price: Option<U128>) {
-        #[cfg(not(feature = "testnet"))]
         self.assert_owner();
         self.sale.public_sale_start = Some(current_time_ms());
         if let Some(price) = price {

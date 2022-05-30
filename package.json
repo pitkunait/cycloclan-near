@@ -2,6 +2,7 @@
   "name": "cycloclan-near",
   "version": "1.0.0",
   "description": "",
+  "type": "module",
   "main": "index.js",
   "scripts": {
     "contract:build": "cd contract && bash scripts/build.sh",
@@ -9,5 +10,8 @@
     "contract:deploy": "cd contract && bash scripts/deploy.sh"
   },
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+  "devDependencies": {
+    "near-units": "^0.1.9"
+  }
 }

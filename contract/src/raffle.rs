@@ -95,6 +95,10 @@ impl Raffle {
         let seed_num = crate::util::get_random_number(0) as u64;
         u64::try_from_slice(&self.swap_remove_raw(seed_num % self.len())).unwrap()
     }
+
+    pub fn draw_at_index(&mut self, index: u64) -> u64 {
+        u64::try_from_slice(&self.swap_remove_raw(index)).unwrap()
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -115,6 +119,29 @@ mod tests {
         let mut context = VMContextBuilder::new();
         testing_env!(context.build());
         for _ in 0..100 {
+            let len = vec.len();
+            assert!(set.insert(vec.draw()));
+            assert_eq!(len - 1, vec.len());
+            testing_env!(context.random_seed(rng.gen()).build());
+        }
+    }
+
+    #[test]
+    pub fn test_index_draw() {
+        let mut rng = rand_xorshift::XorShiftRng::seed_from_u64(2);
+        let mut vec = Raffle::new(b"v".to_vec(), 100);
+        let mut set: HashSet<u64> = HashSet::new();
+        let mut context = VMContextBuilder::new();
+        testing_env!(context.build());
+        for i in 0..20 {
+            let index = i as u64;
+            let len = vec.len();
+            let val = vec.draw_at_index(index);
+            assert_eq!(len - 1, vec.len());
+            assert_eq!(val, index);
+            testing_env!(context.random_seed(rng.gen()).build());
+        }
+        for _ in 0..80 {
             let len = vec.len();
             assert!(set.insert(vec.draw()));
             assert_eq!(len - 1, vec.len());

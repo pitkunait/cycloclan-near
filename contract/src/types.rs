@@ -41,7 +41,6 @@ impl From<InitialMetadata> for NFTContractMetadata {
 #[witgen]
 pub struct Sale {
     pub royalties: Option<Royalties>,
-    pub initial_royalties: Option<Royalties>,
     pub presale_start: Option<TimestampMs>,
     pub public_sale_start: Option<TimestampMs>,
     pub allowance: Option<u32>,
@@ -56,7 +55,6 @@ impl Default for Sale {
             price: U128(0),
             // ..Default::default()
             royalties: Default::default(),
-            initial_royalties: Default::default(),
             presale_start: Default::default(),
             public_sale_start: Default::default(),
             allowance: Default::default(),
@@ -69,9 +67,6 @@ impl Default for Sale {
 impl Sale {
     pub fn validate(&self) {
         if let Some(r) = self.royalties.as_ref() {
-            r.validate()
-        }
-        if let Some(r) = self.initial_royalties.as_ref() {
             r.validate()
         }
     }

@@ -102,7 +102,7 @@ impl Royalties {
     pub(crate) fn validate(&self) {
         require!(
             self.percent <= ONE_HUNDRED_PERCENT_IN_BPS,
-            "royalty percent is in basis points and must be between 0 - 10,0000"
+            "royalty percent is in basis points and must be between 0 - 10,000"
         );
         require!(
             self.accounts.len() <= 10,
@@ -139,10 +139,6 @@ impl Royalties {
         let owner_payout: u128 = payout.payout.get(owner_id).map_or(0, |x| x.0) + rest;
         payout.payout.insert(owner_id.clone(), owner_payout.into());
         payout
-    }
-
-    pub(crate) fn send_funds(&self, balance: Balance, owner_id: &AccountId) {
-        self.create_payout(balance, owner_id).send_funds();
     }
 }
 
